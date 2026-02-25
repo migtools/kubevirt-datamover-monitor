@@ -1,0 +1,27 @@
+run:
+  timeout: 5m
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - gosimple
+    - gocritic
+    - misspell
+    - gofmt
+
+linters-settings:
+  gocritic:
+    enabled-checks:
+      - equalFold
+
+issues:
+  exclude-rules:
+    # Allow fmt.Fprintf errors in debug snapshot writer
+    - path: internal/monitor/app\.go
+      text: "Error return value of `fmt.Fprint"
+      linters:
+        - errcheck
