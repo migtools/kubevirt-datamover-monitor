@@ -18,6 +18,7 @@ package monitor
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -693,17 +694,35 @@ func isBackupFailed(bkp BackupInfo, du *DataUploadInfo) bool {
 
 // getBackupType returns "Full" or "Incremental" for a backup, checking chain data and pod cache.
 func getBackupType(backupName string, du *DataUploadInfo, state AppState) string {
-	// 1. Check S3 chain data (most reliable, works for completed backups)
+	// 1. Check S3 chain data (most reliable, works for completed backups).
+	// A backup may appear in multiple checkpoints' ReferencedBy (e.g. an
+	// incremental backup references both the full and incremental checkpoints).
+	// Checkpoints are ordered chronologically, so the last match is the most
+	// specific type for this backup.
+	var lastMatch string
 	for _, idx := range state.Chains {
 		for _, cp := range idx.Checkpoints {
 			for _, ref := range cp.ReferencedBy {
 				if ref == backupName {
-					return cp.Type
+					lastMatch = cp.Type
 				}
 			}
 		}
 	}
-	// 2. Check cached uploader pod env var (works for active/recent backups)
+	if lastMatch != "" {
+		return lastMatch
+	}
+	// 2. Infer from existing chain: if the VM already has checkpoints in S3,
+	// a new backup that isn't yet in the chain must be incremental (the full
+	// checkpoint was created by a previous backup). This covers active backups
+	// whose index.json hasn't been updated yet.
+	if du != nil && du.VMName != "" && du.VMNamespace != "" {
+		vmID := VMIdentity{Namespace: du.VMNamespace, Name: du.VMName}
+		if idx, ok := state.Chains[vmID]; ok && len(idx.Checkpoints) > 0 {
+			return "Incremental"
+		}
+	}
+	// 3. Check cached uploader pod env var (works for active/recent backups)
 	if du != nil {
 		podName := "kubevirt-dm-" + du.Name
 		for _, p := range state.UploaderPods {
@@ -804,6 +823,25 @@ func filterCompletedBackups(backups []BackupInfo) []BackupInfo {
 			result = append(result, b)
 		}
 	}
+	// Sort by completion time descending and keep only the 3 most recent.
+	sort.Slice(result, func(i, j int) bool {
+		ti := result[i].CompletionTime
+		tj := result[j].CompletionTime
+		if ti == nil && tj == nil {
+			return false
+		}
+		if ti == nil {
+			return false
+		}
+		if tj == nil {
+			return true
+		}
+		return ti.After(*tj)
+	})
+	const maxRecent = 3
+	if len(result) > maxRecent {
+		result = result[:maxRecent]
+	}
 	return result
 }
 
@@ -817,7 +855,9 @@ func countActiveBackups(backups []BackupInfo) int {
 	return count
 }
 
-// filterTerminatedVisible returns terminated pods not currently in the live list.
+// filterTerminatedVisible returns the most recently terminated pod not currently
+// in the live list. Only the last pod (by name, descending) is returned to keep
+// the display compact.
 func filterTerminatedVisible(terminated map[string]PodInfo, live []PodInfo) []PodInfo {
 	liveNames := make(map[string]bool)
 	for _, p := range live {
@@ -829,5 +869,11 @@ func filterTerminatedVisible(terminated map[string]PodInfo, live []PodInfo) []Po
 			result = append(result, p)
 		}
 	}
-	return result
+	if len(result) <= 1 {
+		return result
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Name < result[j].Name
+	})
+	return result[len(result)-1:]
 }
