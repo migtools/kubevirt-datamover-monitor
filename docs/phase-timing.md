@@ -19,10 +19,10 @@ New → Accepted → Prepared → InProgress → Completed
 
 | Phase | Meaning |
 |-------|---------|
-| New | CSI plugin created the DataUpload object |
-| Accepted | Data mover controller received and accepted the request |
-| Prepared | Preliminary setup done (snapshot volume exposed & mounted) |
-| InProgress | Data actively transferring to the backup storage repository |
+| New | Velero backup workflow created the DataUpload; kubevirt datamover validates VM exists, is running, and has CBT enabled |
+| Accepted | VMBT prepared from S3 state, backup mode resolved (full vs incremental), VirtualMachineBackup created, waiting for CBT snapshot to complete |
+| Prepared | VirtualMachineBackup completed; PV rebound from VM namespace to OADP namespace, datamover pod launched |
+| InProgress |Datamover pod uploading backup data to BSL (S3/object store) |
 | Canceling | Cancellation request triggered, processing |
 | Canceled | Cancellation completed successfully |
 | Completed | Data transfer finished successfully |
