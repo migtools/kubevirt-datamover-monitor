@@ -17,12 +17,14 @@ New → Accepted → Prepared → InProgress → Completed
                           → Canceling  → Canceled
 ```
 
+When using the Kubevirt Datamover, the the phases are defined as follows:
+
 | Phase | Meaning |
 |-------|---------|
-| New | CSI plugin created the DataUpload object |
-| Accepted | Data mover controller received and accepted the request |
-| Prepared | Preliminary setup done (snapshot volume exposed & mounted) |
-| InProgress | Data actively transferring to the backup storage repository |
+| New | Velero backup workflow created the DataUpload; kubevirt datamover validates VM exists, is running, and has CBT enabled |
+| Accepted | VMBT prepared from S3 state, backup mode resolved (full vs incremental), VirtualMachineBackup created, waiting for CBT snapshot to complete |
+| Prepared | VirtualMachineBackup completed; PV rebound from VM namespace to OADP namespace, datamover pod launched |
+| InProgress | Datamover pod uploading backup data to BSL (S3/object store) |
 | Canceling | Cancellation request triggered, processing |
 | Canceled | Cancellation completed successfully |
 | Completed | Data transfer finished successfully |
@@ -30,7 +32,7 @@ New → Accepted → Prepared → InProgress → Completed
 
 Understanding how long each DataUpload spends in each phase is critical for
 identifying bottlenecks (e.g., slow snapshot preparation, slow data transfer)
-and diagnosing failures.
+and diagnosing failures. In particular, the "Accepted" phase duration tells us how much time the kubevirt controller spent processing the VMB and generating the qcow2 files, and the "InProgress" phase duration tells us how much time the kubevirt datamover pod spent actually uploading the backup files to the BSL and the related metadata updates.
 
 ## Architecture
 
