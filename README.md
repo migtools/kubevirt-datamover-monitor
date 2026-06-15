@@ -54,6 +54,7 @@ kubevirt-datamover-monitor -interval 5s -chain-interval 60s
 | `-log-lines` | `10` | Tail lines per pod |
 | `-no-s3` | `false` | Disable S3 backup chain fetch |
 | `-debug-file` | | Write debug snapshots to file |
+| `-report-file` | `datamover-report.md` | Write phase timing report to file (empty to disable) |
 | `-version` | | Print version and exit |
 
 ### Keyboard
@@ -79,6 +80,7 @@ kubevirt-datamover-monitor -interval 5s -chain-interval 60s
 - Per-VM backup chain tree from S3 (full and incremental checkpoints with sizes)
 - Pod logs from uploader, controller, and velero pods (with JSON log parsing)
 - Failure reasons and error messages
+- **Phase timing report** — tracks how long each DataUpload spends in each phase via K8s Watch, written to `datamover-report.md` (see [docs/phase-timing.md](docs/phase-timing.md))
 
 ## License
 
