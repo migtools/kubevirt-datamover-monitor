@@ -42,6 +42,7 @@ func main() {
 		logLines      int64
 		noS3          bool
 		debugFile     string
+		reportFile    string
 		showVersion   bool
 	)
 
@@ -61,6 +62,7 @@ func main() {
 	flag.Int64Var(&logLines, "log-lines", 10, "Tail lines per pod")
 	flag.BoolVar(&noS3, "no-s3", false, "Disable S3 chain fetch")
 	flag.StringVar(&debugFile, "debug-file", "", "Write debug state snapshots to this file")
+	flag.StringVar(&reportFile, "report-file", "datamover-report.md", "Write phase timing report to this file (empty to disable)")
 	flag.BoolVar(&showVersion, "version", false, "Print version and exit")
 	flag.Parse()
 
@@ -108,6 +110,7 @@ func main() {
 		LogLines:      logLines,
 		NoS3:          noS3,
 		DebugFile:     debugFile,
+		ReportFile:    reportFile,
 	}, dynClient, typedClient); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)

@@ -29,6 +29,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
+const defaultReportFile = "datamover-report.md"
+
 // Config holds CLI flags.
 type Config struct {
 	Namespace     string
@@ -37,6 +39,7 @@ type Config struct {
 	LogLines      int64
 	NoS3          bool
 	DebugFile     string
+	ReportFile    string
 }
 
 // Run creates the bubbletea model and runs the TUI program.
@@ -59,6 +62,10 @@ type model struct {
 	scrollY     int
 	ready       bool
 	lastChain   time.Time
+	// Phase timing via K8s Watch
+	phaseTimings map[string]*DataUploadTiming
+	watchEvents  <-chan watchEventMsg
+	watchCancel  context.CancelFunc
 }
 
 // Scroll constants
@@ -80,11 +87,18 @@ func newModel(cfg Config, dyn dynamic.Interface, typed kubernetes.Interface) mod
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(colorCyan)
 
+	watchCh := make(chan watchEventMsg, 100)
+	ctx, cancel := context.WithCancel(context.Background())
+	go startDataUploadWatch(ctx, dyn, cfg.Namespace, watchCh)
+
 	return model{
-		config:      cfg,
-		dynClient:   dyn,
-		typedClient: typed,
-		spinner:     s,
+		config:       cfg,
+		dynClient:    dyn,
+		typedClient:  typed,
+		spinner:      s,
+		phaseTimings: make(map[string]*DataUploadTiming),
+		watchEvents:  watchCh,
+		watchCancel:  cancel,
 		state: AppState{
 			Chains:           make(map[VMIdentity]*VMIndex),
 			Throughput:       make(map[string]ThroughputSample),
@@ -99,6 +113,7 @@ func (m model) Init() tea.Cmd {
 		m.spinner.Tick,
 		m.doFetch(),
 		scheduleTickCmd(m.config.Interval),
+		readWatchEvent(m.watchEvents),
 	)
 }
 
@@ -109,6 +124,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "q", "ctrl+c":
+			if m.watchCancel != nil {
+				m.watchCancel()
+			}
 			return m, tea.Quit
 		case "j", "down":
 			m.scrollY++
@@ -151,6 +169,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		prevPhases := m.state.PrevBackupPhases
 		m.state = msg.state
 		m.writeDebugSnapshot()
+		m.writePhaseTimingReport()
 
 		if !m.config.NoS3 && m.state.Storage != nil {
 			if m.lastChain.IsZero() {
@@ -174,6 +193,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.state.Chains = msg.chains
 		}
 		m.state.S3Error = msg.err
+
+	case watchEventMsg:
+		recordPhaseTransition(m.phaseTimings, msg)
+		cmds = append(cmds, readWatchEvent(m.watchEvents))
+
+	case watchClosedMsg:
+		// Watch channel closed; no more events
 
 	case spinner.TickMsg:
 		var cmd tea.Cmd
@@ -362,4 +388,12 @@ func (m model) writeDebugSnapshot() {
 		fmt.Fprintf(f, "  %s: prevBytes=%d prevTime=%s rate=%.1f B/s\n",
 			name, s.PrevBytes, s.PrevTime.Format("15:04:05.000"), s.LastRate)
 	}
+}
+
+// writePhaseTimingReport writes the phase timing markdown report.
+func (m model) writePhaseTimingReport() {
+	if m.config.ReportFile == "" {
+		return
+	}
+	_ = writeTimingReport(m.config.ReportFile, m.phaseTimings)
 }

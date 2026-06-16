@@ -109,6 +109,23 @@ type ThroughputSample struct {
 	LastRate  float64   // last computed rate in bytes/sec (kept for display stability)
 }
 
+// PhaseTransition records when a DataUpload entered a specific phase.
+type PhaseTransition struct {
+	Phase     string
+	EnteredAt time.Time
+}
+
+// DataUploadTiming tracks the full phase timeline for a single DataUpload.
+type DataUploadTiming struct {
+	Name         string
+	BackupName   string
+	VMName       string
+	VMNamespace  string
+	Transitions  []PhaseTransition
+	CurrentPhase string
+	FinalPhase   string // set when terminal (Completed/Failed/Canceled)
+}
+
 // AppState aggregates all fetched data.
 type AppState struct {
 	Storage          *StorageInfo
